@@ -1,9 +1,11 @@
-name: Haftalik BIST Tarama
+name: Haftalik BIST Tarama ve Kontrol
 
 on:
   schedule:
-    # Her Pazar saat 16:00 UTC (Türkiye saatiyle 19:00) çalışır
+    # Her Pazar saat 16:00 UTC (Türkiye saatiyle ~19:00) - AL SİNYALİ
     - cron: '0 16 * * 0'
+    # Her Perşembe saat 16:00 UTC (Türkiye saatiyle ~19:00) - SAT SİNYALİ
+    - cron: '0 16 * * 4'
   workflow_dispatch: # Manuel çalıştırmak için buton ekler
 
 jobs:
@@ -26,3 +28,19 @@ jobs:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           CHAT_ID: ${{ secrets.CHAT_ID }}
         run: python main.py
+
+      - name: Takip Dosyasını Kaydet (Sadece Pazar Çalışır)
+        # GitHub Actions'ın sonraki çalıştırmada kullanması için dosyayı saklar
+        uses: actions/upload-artifact@v3
+        if: success() && github.event.schedule == '0 16 * * 0' # Sadece Pazar
+        with:
+          name: bist-positions
+          path: haftalik_pozisyonlar.json
+
+      - name: Takip Dosyasını Yükle (Sadece Perşembe Çalışır)
+        # Önceki çalışmadan (Pazar) kalan dosyayı indirir
+        uses: actions/download-artifact@v3
+        if: success() && github.event.schedule == '0 16 * * 4' # Sadece Perşembe
+        with:
+          name: bist-positions
+          path: .
