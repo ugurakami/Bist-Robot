@@ -18,7 +18,7 @@ jobs:
       - name: Python Kur
         uses: actions/setup-python@v4
         with:
-          python-version: '3.9'
+          python-version: '3.8'
 
       - name: Kütüphaneleri Yükle
         run: pip install yfinance pandas pandas-ta requests numpy
