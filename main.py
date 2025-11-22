@@ -1,10 +1,10 @@
 import yfinance as yf
 import pandas as pd
-import pandas_ta as ta
 import numpy as np
 import requests
 import os
-from datetime import datetime
+import ta
+from datetime import datetime, date
 
 # --- AYARLAR ---
 # Bu bilgileri GitHub Secrets'tan çekecek, güvenlidir.
