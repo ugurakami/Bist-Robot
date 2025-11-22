@@ -21,7 +21,7 @@ jobs:
           python-version: '3.9'
 
       - name: Kütüphaneleri Yükle
-        run: pip install yfinance pandas pandas_ta requests numpy
+        run: pip install yfinance pandas pandas-ta requests numpy
 
       - name: Analizi Başlat
         env:
