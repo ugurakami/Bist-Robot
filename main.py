@@ -12,14 +12,35 @@ TELEGRAM_TOKEN = os.environ["TELEGRAM_TOKEN"]
 CHAT_ID = os.environ["CHAT_ID"]
 
 SEKTORLER = {
-    "BANKA": ["AKBNK", "GARAN", "ISCTR", "YKBNK"],
-    "HOLDING": ["KCHOL", "SAHOL"],
-    "GIDA": ["BIMAS", "MGROS", "ULKER"],
-    "HAVAYOLU": ["THYAO", "PGSUS"],
-    "DEMIR-CELIK": ["EREGL", "KRDMD"],
-    "ENERJI": ["TUPRS", "ASTOR"],
-    "TELEKOM": ["TCELL", "TTKOM"],
-    "OTOMOTIV": ["FROTO", "TOASO"]
+    # BANKA
+    "BANKA": ["AKBNK", "GARAN", "ISCTR", "YKBNK", "HALKB"],
+    
+    # HOLDİNG
+    "HOLDING": ["KCHOL", "SAHOL", "AEFES", "DEVA", "DOAS"],
+    
+    # GIDA / PERAKENDE
+    "GIDA": ["BIMAS", "MGROS", "ULKER", "MPARK", "EKGYO"],
+    
+    # HAVAYOLU / TURİZM
+    "HAVAYOLU": ["THYAO", "PGSUS", "TAVHL"],
+    
+    # DEMİR-ÇELİK / METAL
+    "DEMIR-CELIK": ["EREGL", "KRDMD", "ALARK", "ISKUR", "CIMSA"],
+    
+    # ENERJİ / PETROL / GAZ
+    "ENERJI": ["TUPRS", "ASTOR", "SASA", "GOLTS", "AHLAT"],
+    
+    # SAVUNMA / TEKNOLOJİ
+    "SAVUNMA": ["ASELS", "VESTL", "ARCLK", "KOZAL"],
+    
+    # TELEKOM / İLETİŞİM
+    "TELEKOM": ["TCELL", "TTKOM", "INFO"],
+    
+    # OTOMOTİV
+    "OTOMOTIV": ["FROTO", "TOASO", "CCOLA", "KONYA"],
+    
+    # CAM / KİMYA
+    "KIMYA": ["SISE", "PETKM", "ODAS"]
 }
 
 def send_telegram(message):
