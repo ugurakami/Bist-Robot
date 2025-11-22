@@ -18,10 +18,16 @@ jobs:
       - name: Python Kur
         uses: actions/setup-python@v4
         with:
-          python-version: '3.8'
+          # Versiyonu tekrar 3.9'a yükseltiyoruz.
+          python-version: '3.9' 
 
-      - name: Kütüphaneleri Yükle
-        run: pip install yfinance pandas pandas-ta requests numpy
+      - name: Kütüphaneleri Yükle (Temel Kütüphaneler)
+        # pandas'ı önce yükleyerek bağımlılık sorununu azaltıyoruz
+        run: pip install pandas yfinance requests numpy
+
+      - name: Kütüphaneleri Yükle (Teknik Analiz)
+        # pandas-ta'yı ayrı bir adımda yüklüyoruz
+        run: pip install pandas-ta
 
       - name: Analizi Başlat
         env:
