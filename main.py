@@ -12,35 +12,41 @@ TELEGRAM_TOKEN = os.environ["TELEGRAM_TOKEN"]
 CHAT_ID = os.environ["CHAT_ID"]
 
 SEKTORLER = {
-    # BANKA
-    "BANKA": ["AKBNK", "GARAN", "ISCTR", "YKBNK", "HALKB"],
+    # BANKA / FİNANS
+    "BANKA": ["AKBNK", "GARAN", "ISCTR", "YKBNK", "HALKB", "TSKB", "VAKBN", "QNBFL"],
     
-    # HOLDİNG
-    "HOLDING": ["KCHOL", "SAHOL", "AEFES", "DEVA", "DOAS"],
+    # HOLDİNG / SANAYİ ÇEŞİTLİLİĞİ
+    "HOLDING": ["KCHOL", "SAHOL", "AEFES", "DOHOL", "AKSA", "ANACM", "KONTR", "ITTFH"],
     
-    # GIDA / PERAKENDE
-    "GIDA": ["BIMAS", "MGROS", "ULKER", "MPARK", "EKGYO"],
+    # GIDA / PERAKENDE / TİCARET
+    "PERAKENDE": ["BIMAS", "MGROS", "ULKER", "SOKM", "SASA", "EREGL", "TOASO", "FROTO"],
     
-    # HAVAYOLU / TURİZM
-    "HAVAYOLU": ["THYAO", "PGSUS", "TAVHL"],
+    # HAVACILIK / TURİZM
+    "HAVACILIK": ["THYAO", "PGSUS", "TAVHL", "AYDEM", "AYEN"],
     
     # DEMİR-ÇELİK / METAL
-    "DEMIR-CELIK": ["EREGL", "KRDMD", "ALARK", "ISKUR", "CIMSA"],
+    "METAL": ["EREGL", "KRDMD", "ALARK", "CIMSA", "AKSEN", "KCAER", "GOZDE"],
     
     # ENERJİ / PETROL / GAZ
-    "ENERJI": ["TUPRS", "ASTOR", "SASA", "GOLTS", "AHLAT"],
+    "ENERJI": ["TUPRS", "ASTOR", "PETKM", "KOZAL", "IPEKE", "GOLTS", "AHLAT", "ENJSA"],
     
-    # SAVUNMA / TEKNOLOJİ
-    "SAVUNMA": ["ASELS", "VESTL", "ARCLK", "KOZAL"],
+    # SAVUNMA / TEKNOLOJİ / YAZILIM
+    "TEKNOLOJI": ["ASELS", "VESTL", "ARCLK", "KOZAL", "YEOTK", "MIA", "CWENE", "PENTA", "LOGO"],
     
-    # TELEKOM / İLETİŞİM
-    "TELEKOM": ["TCELL", "TTKOM", "INFO"],
+    # İLETİŞİM / TELEKOM
+    "ILETISIM": ["TCELL", "TTKOM", "INFO", "BVSAN"],
     
-    # OTOMOTİV
-    "OTOMOTIV": ["FROTO", "TOASO", "CCOLA", "KONYA"],
+    # OTOMOTİV / ULAŞIM
+    "OTOMOTIV": ["FROTO", "TOASO", "CCOLA", "OTKAR", "JANTS", "TGSAS", "THY"],
     
-    # CAM / KİMYA
-    "KIMYA": ["SISE", "PETKM", "ODAS"]
+    # İNŞAAT / ÇİMENTO
+    "INSAAT": ["SISE", "ODAS", "HEKTS", "TUMOS", "AKCNS", "CEMAS", "NUHCM"],
+    
+    # SAĞLIK
+    "SAGLIK": ["MPARK", "MEDTR", "DEVA"],
+
+    # DİĞER (Çeşitli)
+    "DIGER": ["MAVI", "YATAS", "BIZIM", "OZGYO", "MPARK", "SAFKM"]
 }
 
 def send_telegram(message):
