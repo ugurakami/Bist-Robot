@@ -8,27 +8,16 @@ import ta
 from datetime import datetime, date
 
 # --- AYARLAR ---
+# GitHub Secrets'tan çekilir
 TELEGRAM_TOKEN = os.environ["TELEGRAM_TOKEN"]
 CHAT_ID = os.environ["CHAT_ID"]
 HESAPLAMALAR_DOSYASI = "haftalik_pozisyonlar.json"
 
 # RİSK VE PORTFÖY AYARLARI (USD cinsinden)
-PORTFOY_BUYUKLUGU = 100_000   # Toplam portföy büyüklüğünüz (Örnek: $100.000)
-RISK_PER_TRADE = 0.01         # Her işlemde portföyün %1'ini riske et (0.01)
-ATR_STOP_CARPANI = 3.0        # Stop-Loss mesafesi (SuperTrend 3xATR kullanır)
-CHECK_INDEX = False           # S&P 500 Endeks Kontrol Bayrağı
+PORTFOY_BUYUKLUGU = 100_000   # Toplam portföy büyüklüğünüz (Örn: $100.000)
+RISK_PER_TRADE = 0.01         # Her işlemde portföyün %1'ini riske et
+CHECK_INDEX = False           # S&P 500 Endeks Kontrol Bayrağı (Dinamik tarama için False önerilir)
 
-# ====================== ABD PİYASASI SEKTÖR LİSTESİ (Büyüme + Mega-Cap) ======================
-SEKTORLER = {
-    "YUKSEK_BUYUME": ["AMD", "COST", "NET", "SNOW", "MRNA", "SHOP", "SQ", "ROKU", "SPOT"],
-    "TEKNOLOJI": ["MSFT", "AAPL", "GOOGL", "AMZN", "NVDA", "META", "ADBE", "TSM"],
-    "ETFS": ["SPY", "QQQ", "IWM", "XLK", "XLF", "XLE", "XLP"], 
-    "FINANS": ["JPM", "V", "MA", "BAC", "WFC", "GS", "MS"],
-    "SAGLIK": ["JNJ", "PFE", "LLY", "MRK", "UNH", "ABBV"],
-    "TUKETIM": ["WMT", "KO", "PEP", "COST", "PG", "MCD", "HD"],
-    "ENERJI": ["XOM", "CVX", "SLB", "CAT", "BA", "HON"],
-}
-# ==================================================================================================
 
 # --- YARDIMCI FONKSİYONLAR ---
 def send_telegram(message):
@@ -46,6 +35,21 @@ def load_positions():
             return json.load(f)
     return []
 
+# --- DINAMIK LISTE ÇEKME (S&P 500) ---
+def get_sp500_tickers():
+    """Wikipedia'dan S&P 500 bileşenlerini çeker."""
+    try:
+        # Pandas'ın lxml ile web'den tablo okuma özelliği kullanılır
+        tables = pd.read_html('https://en.wikipedia.org/wiki/List_of_S%26P_500_companies')
+        sp500_df = tables[0]
+        tickers = sp500_df['Symbol'].tolist() 
+        # Bazı tikler yfinance'da sorun çıkarabilir (. vs -), temizlenir
+        tickers = [t.replace('.', '-') for t in tickers]
+        return tickers
+    except Exception as e:
+        send_telegram(f"❌ HATA: S&P 500 listesi çekilemedi: {e}")
+        return []
+
 # --- SUPER TREND HESAPLAMA ---
 def get_weekly_supertrend(symbol):
     try:
@@ -53,14 +57,13 @@ def get_weekly_supertrend(symbol):
         df = yf.download(symbol, period="2y", interval="1wk", progress=False) 
         if len(df) < 50: return None
         
-        # ATR ve SuperTrend Hesaplama (ATR'yi pozisyon büyüklüğü için kullanıyoruz)
-        df['ATR'] = ta.volatility.average_true_range(df['High'], df['Low'], df['Close'], window=10)
-        
+        # SuperTrend Hesaplama (10, 3.0)
         st_data = ta.trend.supertrend(
             close=df['Close'], high=df['High'], low=df['Low'], window=10, coefficient=3.0
         )
         
         df = df.join(st_data)
+        # ta kütüphanesi sütun adları kullanılır
         df['ST_Value'] = df['SUPERT_D_10_3.0'] 
         df['Trend'] = np.where(df['SUPERT_10_3.0'] > 0, 1, -1) 
         
@@ -72,68 +75,64 @@ def get_weekly_supertrend(symbol):
 
 # --- PAZAR TARAMASI (AL SİNYALİ) ---
 def pazar_taramasi():
-    report = f"📢 *PAZAR HAFTALIK ABD RAPORU* ({date.today().strftime('%d.%m.%Y')})\n\n"
+    report = f"📢 *PAZAR HAFTALIK ABD S&P 500 RAPORU* ({date.today().strftime('%d.%m.%Y')})\n\n"
     secilenler = []
-    used_sectors = set()
     positions_to_save = []
+    
+    # *** DINAMIK LISTE ÇEKİLİYOR ***
+    hisse_listesi = get_sp500_tickers()
+    if not hisse_listesi:
+        return
 
-    # ENDEKS KONTROLÜ
+    # ENDEKS KONTROLÜ (Opsiyonel)
     if CHECK_INDEX:
-        spy_df = get_weekly_supertrend("SPY") # S&P 500 ETF kontrolü
+        spy_df = get_weekly_supertrend("^GSPC") # S&P 500 endeksi
         if spy_df is None or spy_df['Trend'].iloc[-1] != 1:
             send_telegram("⚠️ *S&P 500 HAFTALIK TREN DÜŞÜŞTE* → Bu hafta ALIM YOK.")
             save_positions([])
             return
 
-    for sektor, hisseler in SEKTORLER.items():
-        if len(used_sectors) >= 3: break
+    for hisse in hisse_listesi:
         
-        for hisse in hisseler:
-            if sektor in used_sectors: continue
+        df = get_weekly_supertrend(hisse)
+        if df is None: continue
+        
+        last = df.iloc[-1]
+        st_val = last['ST_Value']
+        
+        # DÜŞÜK RİSKLİ GİRİŞ KOŞULU (Pullback: Trendde ve desteğe yakın)
+        if last['Trend'] == 1 and last['Close'] < st_val * 1.15: 
             
-            df = get_weekly_supertrend(hisse)
-            if df is None: continue
+            # --- POZİSYON BÜYÜKLÜĞÜ HESAPLAMA ---
+            risk_per_share = last['Close'] - st_val 
+            if risk_per_share <= 0: continue # Negatif risk olamaz
+                
+            max_risk_capital = PORTFOY_BUYUKLUGU * RISK_PER_TRADE
             
-            last = df.iloc[-1]
-            st_val = last['ST_Value']
+            # Alınacak adet (Quantity)
+            adet = int(max_risk_capital // risk_per_share)
             
-            # DÜŞÜK RİSKLİ GİRİŞ KOŞULU (Pullback)
-            if last['Trend'] == 1 and last['Close'] < st_val * 1.15: 
+            if adet < 1: continue 
                 
-                # --- POZİSYON BÜYÜKLÜĞÜ HESAPLAMA ---
-                # 1. Hisse başına maksimum risk (stop mesafesi)
-                risk_per_share = last['Close'] - st_val # Giriş fiyatı - Stop (ST değeri)
-                if risk_per_share <= 0: continue # Negatif risk olamaz
-                    
-                # 2. Portföyden riske edilecek toplam miktar
-                max_risk_capital = PORTFOY_BUYUKLUGU * RISK_PER_TRADE
-                
-                # 3. Alınacak adet (Quantity)
-                adet = int(max_risk_capital // risk_per_share)
-                
-                if adet < 1: continue # 1 adetten az alım yapma
-                    
-                pozisyon_degeri = adet * last['Close']
-                
-                # --- RAPOR VERİLERİ ---
-                hedef = last['Close'] * 1.15 
-                stop = st_val 
-                
-                signal_text = (
-                    f"✅ *{hisse}* ({sektor})\n"
-                    f"Fiyat: ${last['Close']:.2f} | Stop: ${stop:.2f}\n"
-                    f"**Alım Adeti:** {adet} adet\n"
-                    f"**Poz. Değeri:** ${pozisyon_degeri:,.0f} ({pozisyon_degeri/PORTFOY_BUYUKLUGU:.1%})\n"
-                )
-                
-                secilenler.append(signal_text)
-                used_sectors.add(sektor)
-                
-                positions_to_save.append({
-                    'hisse': hisse,
-                    'stop_fiyat': stop
-                })
-                break
+            pozisyon_degeri = adet * last['Close']
+            
+            # --- RAPOR VERİLERİ ---
+            signal_text = (
+                f"✅ *{hisse}*\n"
+                f"Fiyat: ${last['Close']:.2f} | Stop: ${st_val:.2f}\n"
+                f"**Alım Adeti:** {adet} adet\n"
+                f"**Poz. Değeri:** ${pozisyon_degeri:,.0f} ({pozisyon_degeri/PORTFOY_BUYUKLUGU:.1%})\n"
+            )
+            
+            secilenler.append(signal_text)
+            
+            positions_to_save.append({
+                'hisse': hisse,
+                'stop_fiyat': st_val
+            })
+            
+            # En fazla 5 sinyal yeterli (performans için sınırlarız)
+            if len(secilenler) >= 5: break 
 
     if secilenler:
         report += f"⭐ *YENİ HAFTALIK AL SİNYALLERİ* (Risk %{RISK_PER_TRADE*100:.0f}) ⭐\n"
@@ -146,9 +145,8 @@ def pazar_taramasi():
     save_positions(positions_to_save)
 
 
-# --- PERŞEMBE KONTROLÜ ve ANA KONTROL FONKSİYONLARI (Aynı Kalıyor) ---
+# --- PERŞEMBE KONTROLÜ (SAT SİNYALİ) ---
 def persembe_kontrolu():
-    # ... (Bu kısım aynı kalır, sadece rapor başlığı ABD'ye uygun olmalıdır)
     positions = load_positions()
     
     if not positions:
@@ -193,11 +191,11 @@ def persembe_kontrolu():
 if __name__ == "__main__":
     gun = datetime.now().weekday()
     
-    if gun == 6:
+    if gun == 6: # Pazar
         print("Pazar Taraması Başlatılıyor...")
         pazar_taramasi()
     
-    elif gun == 3:
+    elif gun == 3: # Perşembe
         print("Perşembe Kontrolü Başlatılıyor...")
         persembe_kontrolu()
     
