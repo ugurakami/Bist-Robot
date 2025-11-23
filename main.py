@@ -10,6 +10,30 @@ from datetime import datetime, date
 # Bu bilgileri GitHub Secrets'tan çekecek, güvenlidir.
 TELEGRAM_TOKEN = os.environ["TELEGRAM_TOKEN"]
 CHAT_ID = os.environ["CHAT_ID"]
+HESAPLAMALAR_DOSYASI = "haftalik_pozisyonlar.json"
+
+# YENİ KONTROL BAYRAĞI: True yaparsanız BIST100 trendi kırmızıysa AL sinyali gelmez.
+# Şimdilik sinyal alabilmek için False yapalım.
+CHECK_BIST100 = False
+
+# def pazar_taramasi(): fonksiyonunun içindeki kısım
+def pazar_taramasi():
+    report = f"📢 *PAZAR HAFTALIK BIST RAPORU* ({date.today().strftime('%d.%m.%Y')})\n\n"
+    # ... diğer değişkenler ...
+
+    # BIST100 Kontrol Bayrağı Açık mı?
+    if CHECK_BIST100:
+        # KODDA SİLECEĞİNİZ BLOK 1: BIST100 Verisini Çekme
+        xu100_df = get_weekly_supertrend("XU100")
+        if xu100_df is None: 
+            send_telegram("❌ HATA: BIST100 verisi çekilemedi.")
+            return
+
+        # KODDA SİLECEĞİNİZ BLOK 2: BIST100 Trend Kontrolü
+        if xu100_df['Trend'].iloc[-1] != 1:
+            send_telegram("⚠️ *BIST100 HAFTALIK TREN DÜŞÜŞTE* → Bu hafta ALIM YOK. Nakitte kalmak mantıklı.")
+            save_positions([])
+            return
 
 SEKTORLER = {
     # BANKA / FİNANS
