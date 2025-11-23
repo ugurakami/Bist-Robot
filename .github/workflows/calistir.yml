@@ -22,7 +22,7 @@ jobs:
           python-version: '3.9' 
 
       - name: Kütüphaneleri Yükle (Temel Kütüphaneler)
-        run: pip install yfinance pandas numpy requests ta lxml
+        run: pip install yfinance pandas numpy requests ta
 
       - name: Analizi Başlat
         env:
