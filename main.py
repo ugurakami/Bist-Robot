@@ -37,14 +37,19 @@ def load_positions():
 
 # --- DINAMIK LISTE ÇEKME (S&P 500) ---
 def get_sp500_tickers():
-    """Wikipedia'dan S&P 500 bileşenlerini çeker."""
+    """Halka açık bir CSV kaynağından S&P 500 bileşenlerini çeker."""
     try:
-        # Pandas'ın lxml ile web'den tablo okuma özelliği kullanılır
-        tables = pd.read_html('https://en.wikipedia.org/wiki/List_of_S%26P_500_companies')
-        sp500_df = tables[0]
+        # Halka açık ve stabil bir S&P 500 listesi CSV linki kullanılır.
+        url = 'https://raw.githubusercontent.com/datasets/s-p-500-companies/master/data/constituents.csv'
+        sp500_df = pd.read_csv(url)
+        # Sütun adı Symbol olmalı
         tickers = sp500_df['Symbol'].tolist() 
-        # Bazı tikler yfinance'da sorun çıkarabilir (. vs -), temizlenir
         tickers = [t.replace('.', '-') for t in tickers]
+        
+        # Ek kontrol: SPY (S&P 500 ETF) listede yoksa eklenir.
+        if 'SPY' not in tickers:
+            tickers.append('SPY')
+
         return tickers
     except Exception as e:
         send_telegram(f"❌ HATA: S&P 500 listesi çekilemedi: {e}")
