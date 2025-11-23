@@ -22,8 +22,7 @@ jobs:
           python-version: '3.9' 
 
       - name: Kütüphaneleri Yükle (Temel Kütüphaneler)
-        # pandas-ta yerine 'ta' kütüphanesini yüklüyoruz
-        run: pip install pandas yfinance requests numpy ta
+        run: pip install yfinance pandas numpy requests ta lxml
 
       - name: Analizi Başlat
         env:
