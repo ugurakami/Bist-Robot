@@ -4,7 +4,356 @@ import numpy as np
 import requests
 from datetime import datetime, date
 import logging
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from import yfinance as yf
+import pandas as pd
+import numpy as np
+import requests # Yeni eklenen kütüphane
+
+# --- TELEGRAM SABİTLERİ (Lütfen Kendi Bilgilerinizle Değiştirin) ---
+# Botunuzdan aldığınız token. (Örn: '123456789:ABC-DEF123456...')
+TELEGRAM_TOKEN = "YOUR_TELEGRAM_BOT_TOKEN" 
+# Mesajı göndermek istediğiniz chat ID'si. (Örn: '-1001234567890' veya '@kullanici_adiniz')
+CHAT_ID = "YOUR_CHAT_ID" 
+# -------------------------------------------------------------------
+
+# Finansal sabitler ve parametreler
+AGRESİF_PİYASA_DEĞERİ_MAKS = 500_000_000 # $500 Milyon
+DENGELİ_PİYASA_DEĞERİ_MİN = 10_000_000_000 # $10 Milyar
+
+class DualStrategyScreener:
+    """
+    Belirtilen 'AGRESİF' ve 'DENGELİ' stratejilere göre ABD borsası 
+    için hisse taraması ve öneri sunan modüler sınıf. Telegram entegrasyonu eklenmiştir.
+    """
+    def __init__(self, tickers, strategy, telegram_token, chat_id):
+        self.tickers = tickers
+        self.strategy = strategy.upper()
+        self.raw_data = {}
+        self.fundamentals = {}
+        self.analysis_results = pd.DataFrame()
+        self.telegram_token = telegram_token
+        self.chat_id = chat_id
+
+        if self.strategy not in ['AGRESİF', 'DENGELİ']:
+            raise ValueError("Strateji 'AGRESİF' veya 'DENGELİ' olmalıdır.")
+        
+        print(f"✅ Strateji Seçildi: **{self.strategy}**")
+        
+    # --- 1. Veri Çekme Modülü (Data Retrieval Module) ---
+    # (Önceki kod ile aynı)
+    def fetch_data(self):
+        """
+        yfinance kullanarak fiyat/hacim ve temel verileri çeker.
+        """
+        print("⏳ Veri Çekme Başlatılıyor...")
+        
+        if self.strategy == 'AGRESİF':
+            period = '30d' 
+        else:
+            period = '1y' 
+
+        for ticker in self.tickers:
+            try:
+                hist = yf.download(ticker, period=period, interval='1d', progress=False)
+                info = yf.Ticker(ticker).info
+                
+                if not hist.empty and info:
+                    self.raw_data[ticker] = hist
+                    self.fundamentals[ticker] = info
+                else:
+                    print(f"⚠️ {ticker} için veri bulunamadı veya eksik.")
+                    
+            except Exception as e:
+                print(f"❌ {ticker} veri çekme hatası: {e}")
+        
+        print(f"✅ {len(self.raw_data)} hisse için veri çekimi tamamlandı.")
+        
+    # --- 2. Filtreleme Modülü (Filtering Module) ---
+    # (Önceki kod ile aynı)
+    def filter_by_market_cap_and_fundamentals(self):
+        """
+        Seçilen stratejiye göre piyasa değeri ve temel kriterlere göre filtreleme yapar.
+        """
+        print("⏳ Hisse Listesi Filtreleme Başlatılıyor...")
+        
+        filtered_tickers = []
+        
+        for ticker, info in self.fundamentals.items():
+            market_cap = info.get('marketCap')
+            
+            if market_cap is None:
+                continue
+
+            if self.strategy == 'AGRESİF':
+                if market_cap <= AGRESİF_PİYASA_DEĞERİ_MAKS:
+                    filtered_tickers.append(ticker)
+                    
+            elif self.strategy == 'DENGELİ':
+                if market_cap >= DENGELİ_PİYASA_DEĞERİ_MİN:
+                    revenue_growth = info.get('revenueGrowth', 0.0) 
+                    if revenue_growth > 0.10: 
+                        filtered_tickers.append(ticker)
+                        
+        print(f"✅ {len(filtered_tickers)} hisse filtrelemeden geçti.")
+        self.tickers = filtered_tickers
+        
+    # --- 3. Analiz Modülü (Analysis Module) ---
+    # (Önceki kod ile aynı, MACD ve RSI hesaplama dahil)
+    def calculate_indicators_and_score(self):
+        """
+        Her hisse için teknik/temel indikatörleri hesaplar ve skor verir.
+        """
+        print("⏳ Teknik ve Temel Analizler Başlatılıyor...")
+        
+        results = []
+        
+        for ticker in self.tickers:
+            data = self.raw_data.get(ticker)
+            info = self.fundamentals.get(ticker)
+            
+            if data is None or info is None:
+                continue
+            
+            score = 0
+            justification = []
+            
+            if self.strategy == 'AGRESİF':
+                # --------------------- AGRESİF KRİTERLER ---------------------
+                
+                # 1. Hacim Artışı
+                avg_volume_20d = data['Volume'].iloc[-21:-1].mean()
+                current_volume = data['Volume'].iloc[-1]
+                volume_ratio = current_volume / avg_volume_20d
+                
+                if volume_ratio >= 3.0:
+                    score += 4
+                    justification.append(f"Hacim Artışı: %{round(volume_ratio * 100)} (Katalizör Sinyali)")
+                    
+                # 2. MACD Al Sinyali
+                data['EMA12'] = data['Close'].ewm(span=12, adjust=False).mean()
+                data['EMA26'] = data['Close'].ewm(span=26, adjust=False).mean()
+                data['MACD'] = data['EMA12'] - data['EMA26']
+                data['Signal_Line'] = data['MACD'].ewm(span=9, adjust=False).mean()
+
+                if (data['MACD'].iloc[-2] < data['Signal_Line'].iloc[-2]) and \
+                   (data['MACD'].iloc[-1] > data['Signal_Line'].iloc[-1]):
+                    score += 3
+                    justification.append("MACD Hattı, Sinyal Hattını Yukarı Kesti (Momentum Sinyali)")
+
+                # 3. RSI (7 Günlük) Geri Dönüş
+                data['RSI_7'] = self._calculate_rsi(data['Close'], window=7)
+                rsi_prev = data['RSI_7'].iloc[-2]
+                rsi_current = data['RSI_7'].iloc[-1]
+                
+                if (30 <= rsi_prev <= 40) and (rsi_current > rsi_prev):
+                    score += 3
+                    justification.append(f"RSI(7) {round(rsi_prev)}-{round(rsi_current)} aralığından yukarı döndü (Tepki Sinyali)")
+                    
+            elif self.strategy == 'DENGELİ':
+                # --------------------- DENGELİ KRİTERLER ---------------------
+                
+                # 1. Gelir/Kâr Büyümesi
+                revenue_growth = info.get('revenueGrowth', 0.0) 
+                if revenue_growth > 0.10:
+                    score += 3
+                    justification.append(f"Yıllık Gelir Büyümesi: %{round(revenue_growth * 100)} > %10")
+                    
+                # 2. Debt/Equity
+                debt_to_equity = info.get('debtToEquity')
+                if debt_to_equity is not None and debt_to_equity < 0.5:
+                    score += 2
+                    justification.append(f"D/E Oranı: {round(debt_to_equity, 2)} (Düşük Borçluluk)")
+                    
+                # 3. ROE/ROI
+                return_on_equity = info.get('returnOnEquity')
+                if return_on_equity is not None and return_on_equity > 0.15:
+                    score += 2
+                    justification.append(f"ROE: %{round(return_on_equity * 100)} (Yüksek Karlılık)")
+                
+                # 4. 200 Günlük MA
+                data['MA_200'] = data['Close'].rolling(window=200).mean()
+                
+                if data['Close'].iloc[-1] > data['MA_200'].iloc[-1]:
+                    score += 3
+                    justification.append("Fiyat, 200 Günlük Ortalamanın Üzerinde (Uzun Vadeli Trend)")
+
+                # 5. RSI (14 Günlük) Sağlıklı Trend
+                data['RSI_14'] = self._calculate_rsi(data['Close'], window=14)
+                rsi_current = data['RSI_14'].iloc[-1]
+                
+                if 40 <= rsi_current <= 65:
+                    score += 2
+                    justification.append(f"RSI(14): {round(rsi_current, 1)} (Sağlıklı Trend)")
+
+            entry_price = data['Close'].iloc[-1]
+            
+            results.append({
+                'Hisse': ticker,
+                'Skor': score,
+                'Gerekçe': " | ".join(justification),
+                'Son Kapanış': entry_price,
+                'RSI_Son': data.get('RSI_7', data.get('RSI_14', np.nan)).iloc[-1]
+            })
+
+        self.analysis_results = pd.DataFrame(results)
+        self.analysis_results = self.analysis_results[self.analysis_results['Skor'] > 0]
+        
+        if self.analysis_results.empty:
+            print("❌ Analiz kriterlerine uyan hisse bulunamadı.")
+            return
+
+        print(f"✅ Analiz tamamlandı. {len(self.analysis_results)} hisse skor aldı.")
+
+    # RSI Hesaplama Yardımcı Fonksiyonu
+    def _calculate_rsi(self, series, window):
+        diff = series.diff(1).dropna()
+        gain = (diff.where(diff > 0, 0)).rolling(window=window).mean()
+        loss = (-diff.where(diff < 0, 0)).rolling(window=window).mean()
+        RS = gain / loss
+        return 100 - (100 / (1 + RS))
+    
+    # --- 4. Risk Yönetimi Modülü (Risk Management Module) ---
+    # (Önceki kod ile aynı)
+    def calculate_risk_levels(self):
+        """
+        Giriş fiyatına göre Stop-Loss ve Hedef Fiyat seviyelerini hesaplar.
+        """
+        if self.analysis_results.empty:
+            return
+
+        print("⏳ Risk Yönetimi Seviyeleri Hesaplanıyor...")
+        
+        if self.strategy == 'AGRESİF':
+            stop_loss_pct = 0.05
+            target_pct = 0.15
+        else:
+            stop_loss_pct = 0.10
+            target_pct = 0.30 
+            
+        self.analysis_results['Stop-Loss (%)'] = -stop_loss_pct * 100
+        self.analysis_results['Hedef Fiyat (%)'] = target_pct * 100
+        
+        self.analysis_results['Stop-Loss Fiyatı'] = \
+            self.analysis_results['Son Kapanış'] * (1 - stop_loss_pct)
+            
+        self.analysis_results['Hedef Fiyatı'] = \
+            self.analysis_results['Son Kapanış'] * (1 + target_pct)
+
+        cols_to_round = ['Son Kapanış', 'Stop-Loss Fiyatı', 'Hedef Fiyatı', 'RSI_Son']
+        self.analysis_results[cols_to_round] = self.analysis_results[cols_to_round].round(2)
+        
+        print("✅ Risk seviyeleri hesaplandı.")
+
+    # --- 5. Raporlama Modülü (Reporting Module) ---
+    # (Önceki kod ile aynı)
+    def generate_report(self, top_n=5):
+        """
+        En yüksek skorlu hisseleri içeren temiz bir DataFrame döndürür.
+        """
+        if self.analysis_results.empty:
+            return "Analiz kriterlerine uyan hisse bulunamadı.", None
+        
+        report = self.analysis_results.sort_values(by='Skor', ascending=False).head(top_n)
+        
+        final_report = report[['Hisse', 'Skor', 'Gerekçe', 'Son Kapanış', 'Stop-Loss Fiyatı', 'Hedef Fiyatı', 'Stop-Loss (%)', 'Hedef Fiyat (%)']]
+        
+        title = f"🌟 En İyi {top_n} Hisse Önerisi ({self.strategy} Stratejisi)"
+        
+        return title, final_report
+        
+    # --- 6. Telegram Raporlama Modülü (Telegram Reporting Module) ---
+    def send_telegram_message(self, title, report_df):
+        """
+        Analiz sonuçlarını Telegram'a Markdown formatında gönderir.
+        """
+        if report_df is None or report_df.empty:
+            message = f"🚨 {title}\nAnaliz kriterlerine uyan hisse bulunamadı."
+        else:
+            # Markdown tablosu oluşturma
+            table_markdown = report_df.to_markdown(index=False)
+            
+            message = (
+                f"**{title}**\n\n"
+                f"Tarih: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M')}\n\n"
+                f"```{table_markdown}```\n\n"
+                f"*Not: Fiyatlar $USD cinsindendir. Sadece eğitim amaçlıdır.*"
+            )
+
+        url = f"https://api.telegram.org/bot{self.telegram_token}/sendMessage"
+        payload = {
+            'chat_id': self.chat_id,
+            'text': message,
+            'parse_mode': 'Markdown'
+        }
+        
+        try:
+            response = requests.post(url, data=payload)
+            response.raise_for_status() # HTTP hatalarını yakala
+            print("✅ Telegram mesajı başarıyla gönderildi.")
+        except requests.exceptions.HTTPError as err:
+            print(f"❌ Telegram API Hatası: {err}")
+            print("Lütfen TELEGRAM_TOKEN ve CHAT_ID ayarlarınızı kontrol edin.")
+        except Exception as e:
+            print(f"❌ Telegram Gönderme Hatası: {e}")
+
+    # Ana Çalıştırıcı Fonksiyon (Güncellendi)
+    def run_screener(self):
+        """Tüm modülleri sırayla çalıştırır ve Telegram'a rapor gönderir."""
+        self.fetch_data()
+        self.filter_by_market_cap_and_fundamentals()
+        self.calculate_indicators_and_score()
+        self.calculate_risk_levels()
+        
+        title, report_df = self.generate_report()
+        
+        # Telegram'a rapor gönderme adımı
+        self.send_telegram_message(title, report_df)
+        
+        return title, report_df
+
+# --- Programı Çalıştırma Örneği ---
+if __name__ == '__main__':
+    # Örnek ABD Hisse Senetleri Listesi
+    SAMPLE_TICKERS = ['AAPL', 'MSFT', 'GOOGL', 'TSLA', 'SPY', 'LUMN', 'PLTR', 'GME'] 
+
+    # UYARI: Botunuzun token'ını ve chat ID'nizi buraya girmeyi unutmayın!
+    # Aksi takdirde, Telegram gönderme kısmı hata verecektir.
+    
+    # --- AGRESİF STRATEJİ Testi ---
+    print("\n" + "="*50)
+    print(">>> AGRESİF STRATEJİ TARAMASI BAŞLATILIYOR <<<")
+    print("="*50)
+    
+    screener_aggressive = DualStrategyScreener(
+        tickers=SAMPLE_TICKERS, 
+        strategy='AGRESİF',
+        telegram_token=TELEGRAM_TOKEN,
+        chat_id=CHAT_ID
+    )
+    title_agressive, report_agressive = screener_aggressive.run_screener()
+    
+    if report_agressive is not None:
+        print("\n" + title_agressive)
+        print("-" * len(title_agressive))
+        print(report_agressive.to_markdown(index=False))
+
+    # --- DENGELİ STRATEJİ Testi ---
+    print("\n" + "="*50)
+    print(">>> DENGELİ STRATEJİ TARAMASI BAŞLATILIYOR <<<")
+    print("="*50)
+
+    screener_balanced = DualStrategyScreener(
+        tickers=SAMPLE_TICKERS, 
+        strategy='DENGELİ',
+        telegram_token=TELEGRAM_TOKEN,
+        chat_id=CHAT_ID
+    )
+    title_balanced, report_balanced = screener_balanced.run_screener()
+    
+    if report_balanced is not None:
+        print("\n" + title_balanced)
+        print("-" * len(title_balanced))
+        print(report_balanced.to_markdown(index=False)).futures import ThreadPoolExecutor, as_completed
 import warnings
 warnings.filterwarnings('ignore')
 
